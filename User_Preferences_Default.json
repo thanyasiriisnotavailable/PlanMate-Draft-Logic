@@ -68,5 +68,9 @@
     "daily review sessions",
     "weekly deep review",
     "multiple reviews"
+  ],
+  "studyStyle": [
+    "multiple_passes",
+    "one_pass_deep"
   ]
 }
