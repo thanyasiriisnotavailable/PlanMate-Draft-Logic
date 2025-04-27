@@ -5,9 +5,9 @@ from collections import defaultdict
 
 user_preferences = {
     "optimalFocusDuration": "30–45 minutes",
-    "breakDuration": 5,
+    "breakDuration": 15,
     "userStudyStyle": "multiple_passes",  # "multiple_passes" or "one_pass_deep"
-    "preferStudyTime": ["late morning", "afternoon", "night"]  # Study times: "morning", "afternoon", "evening", "night"
+    "preferStudyTime": ["late morning", "afternoon", "night"]
 }
 
 availability = {
@@ -28,7 +28,7 @@ courses = [
     {
         "name": "Software Architecture",
         "topics": [
-            {"name": "Introduction", "difficulty": 1, "understanding": 4, "studyTime": 45},
+            {"name": "Introduction", "difficulty": 1, "understanding": 5, "studyTime": 30},
             {"name": "System Architecture", "difficulty": 4, "understanding": 1, "studyTime": 120}
         ]
     }
@@ -37,7 +37,6 @@ courses = [
 # === HELPERS ===
 
 def get_focus_minutes(pref):
-    """Return focus duration in minutes based on user preference."""
     mapping = {
         "~30 minutes": 30,
         "30–45 minutes": 45,
@@ -45,8 +44,6 @@ def get_focus_minutes(pref):
         "Over 2 hours": 120
     }
     return mapping.get(pref, 30)
-
-focus_minutes = get_focus_minutes(user_preferences["optimalFocusDuration"])
 
 def estimate_sessions(difficulty, understanding, study_time, study_style):
     """Estimate sessions based on study style, difficulty, and understanding."""
@@ -61,14 +58,59 @@ def estimate_sessions(difficulty, understanding, study_time, study_style):
     else:  # one_pass_deep
         return [adjusted_study_time]
 
+def minutes_between(start_str, end_str):
+    fmt = "%d/%m/%Y %H:%M"
+    return int((datetime.strptime(end_str, fmt) - datetime.strptime(start_str, fmt)).total_seconds() // 60)
+
+# === RULE-BASED SYSTEM ===
+
+def apply_rule_based_adjustments(courses, user_preferences):
+    adjusted_sessions = []
+    focus_minutes = get_focus_minutes(user_preferences["optimalFocusDuration"])
+
+    for course in courses:
+        for topic in course["topics"]:
+            difficulty = topic["difficulty"]
+            understanding = topic["understanding"]
+            base_time = topic["studyTime"]
+
+            # Rule 1: More sessions if difficulty gap is high
+            if difficulty - understanding >= 2:
+                number_of_sessions = 3
+            elif difficulty >= 3:
+                number_of_sessions = 2
+            else:
+                number_of_sessions = 1
+
+            # Rule 2: Study style (multiple passes), only if base_time is big enough
+            if user_preferences["userStudyStyle"] == "multiple_passes" and base_time >= focus_minutes:
+                session_length = min(base_time / number_of_sessions, focus_minutes)
+                overview = session_length * 0.2
+                deep = session_length * 0.6
+                review = session_length * 0.2
+                session_durations = [overview, deep, review]
+            else:
+                # If study time is small, just make 1 session
+                session_length = min(base_time, focus_minutes)
+                session_durations = [session_length]
+
+            # Create sessions
+            for idx, duration in enumerate(session_durations, 1):
+                session_name = f"{course['name']} - {topic['name']} - S{idx}"
+                adjusted_sessions.append((session_name, duration, difficulty))
+    
+    return adjusted_sessions
+
+# === TIME SLOT GENERATION ===
+
 def generate_time_slots(availability, focus_minutes, break_minutes):
-    """Generate all possible time slots within availability."""
     slots = []
     for day, blocks in availability.items():
         for block in blocks:
             start_str, end_str = block.split("-")
             t_start = datetime.strptime(f"{day} {start_str}", "%d/%m/%Y %H:%M")
             t_end = datetime.strptime(f"{day} {end_str}", "%d/%m/%Y %H:%M")
+
             while t_start + timedelta(minutes=focus_minutes) <= t_end:
                 slot_start = t_start.strftime("%d/%m/%Y %H:%M")
                 slot_end = (t_start + timedelta(minutes=focus_minutes)).strftime("%d/%m/%Y %H:%M")
@@ -76,30 +118,7 @@ def generate_time_slots(availability, focus_minutes, break_minutes):
                 t_start += timedelta(minutes=focus_minutes + break_minutes)
     return slots
 
-def minutes_between(start_str, end_str):
-    """Calculate minutes between two time strings."""
-    fmt = "%d/%m/%Y %H:%M"
-    return int((datetime.strptime(end_str, fmt) - datetime.strptime(start_str, fmt)).total_seconds() // 60)
-
-# === CSP VARIABLES ===
-
-variables = []
-domain = generate_time_slots(availability, focus_minutes, user_preferences["breakDuration"])
-
-# Define study sessions with session duration
-for course in courses:
-    for topic in course["topics"]:
-        session_times = estimate_sessions(topic["difficulty"], topic["understanding"], topic["studyTime"], user_preferences["userStudyStyle"])
-        for idx, session_time in enumerate(session_times, 1):
-            session_name = f"{course['name']} - {topic['name']} - S{idx}"
-            variables.append((session_name, session_time))  # (name, required minutes)
-
-# === FUNCTIONALITY ===
-
-occupied_slots = set()
-
 def is_within_preferred(slot_start, prefer_study_times):
-    """Check if slot_start (datetime string) falls into preferred study times (morning, afternoon, etc.)."""
     time_periods = {
         "early morning": (4, 8),
         "late morning": (8, 12),
@@ -108,38 +127,34 @@ def is_within_preferred(slot_start, prefer_study_times):
         "night": (22, 24),
         "late night": (0, 4)
     }
-
     slot_dt = datetime.strptime(slot_start, "%d/%m/%Y %H:%M")
     hour = slot_dt.hour
 
     for period in prefer_study_times:
         start_hour, end_hour = time_periods.get(period, (0, 24))
-        if start_hour < end_hour:
-            if start_hour <= hour < end_hour:
-                return True
-        else:  # Night case (22:00–02:00 wraps around midnight)
-            if hour >= start_hour or hour < end_hour:
-                return True
+        if start_hour <= hour < end_hour or (start_hour > end_hour and (hour >= start_hour or hour < end_hour)):
+            return True
     return False
 
-def assign_time_slot(session_name, required_minutes, is_difficult):
-    """Assign time slot, prioritize preferred time if difficult topic."""
-    preferred_first = []
+# === CSP ASSIGNMENT ===
+
+occupied_slots = set()
+
+def assign_time_slot(session_name, required_minutes, difficulty, domain, user_preferences):
+    preferred_slots = []
     normal_slots = []
 
     for slot_start, slot_end in domain:
         if (slot_start, slot_end) not in occupied_slots:
             available_minutes = minutes_between(slot_start, slot_end)
             if available_minutes >= required_minutes:
-                if is_difficult and is_within_preferred(slot_start, user_preferences["preferStudyTime"]):
-                    preferred_first.append((slot_start, slot_end))
+                if difficulty >= 3 and is_within_preferred(slot_start, user_preferences["preferStudyTime"]):
+                    preferred_slots.append((slot_start, slot_end))
                 else:
                     normal_slots.append((slot_start, slot_end))
 
-    # Priority 1: Preferred slots (for difficult)
-    if preferred_first:
-        selected = preferred_first[0]
-    # Priority 2: Normal slots
+    if preferred_slots:
+        selected = preferred_slots[0]
     elif normal_slots:
         selected = normal_slots[0]
     else:
@@ -148,47 +163,50 @@ def assign_time_slot(session_name, required_minutes, is_difficult):
     occupied_slots.add(selected)
     return selected
 
-def assign_sequentially(assigned_slots):
-    """Ensure sessions (S1, S2, S3) are scheduled consecutively for each topic."""
-    sorted_sessions = sorted(assigned_slots.items(), key=lambda x: x[1][0])  # Sort by start time
+def prepare_sessions(courses, user_preferences):
+    """Prepare sessions grouped by course, sorted by topic difficulty."""
+    sessions_by_course = defaultdict(list)
 
-    last_end_time = None
-    for idx, (session_name, (start, end)) in enumerate(sorted_sessions):
-        if last_end_time:
-            # Ensure the next session starts immediately after the previous one
-            new_start_time = datetime.strptime(last_end_time, "%d/%m/%Y %H:%M") + timedelta(minutes=1)
-            new_end_time = new_start_time + timedelta(minutes=minutes_between(start, end))
-            assigned_slots[session_name] = (new_start_time.strftime("%d/%m/%Y %H:%M"), new_end_time.strftime("%d/%m/%Y %H:%M"))
-        last_end_time = assigned_slots[session_name][1]  # Update last end time
+    for course in courses:
+        # Sort topics inside the course by difficulty (easy ➔ hard)
+        sorted_topics = sorted(course["topics"], key=lambda x: x["difficulty"])
+        for topic in sorted_topics:
+            # Estimate sessions for each topic
+            session_times = estimate_sessions(topic["difficulty"], topic["understanding"], topic["studyTime"], user_preferences["userStudyStyle"])
+            for idx, session_time in enumerate(session_times, 1):
+                session_name = f"{course['name']} - {topic['name']} - S{idx}"
+                sessions_by_course[course["name"]].append((session_name, session_time, topic["difficulty"]))  # We keep difficulty too
+    return sessions_by_course
 
-    return assigned_slots
 
 # === MAIN FUNCTION ===
 
 if __name__ == "__main__":
+    # Phase 1: Apply Rule-Based adjustments
+    adjusted_sessions = apply_rule_based_adjustments(courses, user_preferences)
+
+    # Phase 2: CSP setup
+    focus_minutes = get_focus_minutes(user_preferences["optimalFocusDuration"])
+    domain = generate_time_slots(availability, focus_minutes, user_preferences["breakDuration"])
+
     study_plan = {}
 
-    # Iterate over each session and assign time slots
-    for session_name, required_minutes in variables:
-        # Determine if the topic is difficult
-        is_difficult = next(topic["difficulty"] >= 3 for course in courses for topic in course["topics"] if session_name.startswith(course["name"]))
-        
-        # Assign a time slot for the session
-        slot = assign_time_slot(session_name, required_minutes, is_difficult)
-
+    # Phase 3: Assign sessions
+    for session_name, required_minutes, difficulty in adjusted_sessions:
+        slot = assign_time_slot(session_name, required_minutes, difficulty, domain, user_preferences)
         if slot:
             study_plan[session_name] = slot
         else:
             print(f"No valid time slot available for {session_name}")
 
-
-    # Step to ensure sequentiality in session assignments
+    # Phase 4: Organize and print study plan
     if study_plan:
         organized_plan = defaultdict(list)
         for session, (start_time, end_time) in study_plan.items():
             date = start_time.split(" ")[0]
             organized_plan[date].append((start_time, end_time, session))
 
+        print("Study Plan:")
         for date in sorted(organized_plan.keys()):
             print(f"\n{date}")
             for start, end, session in sorted(organized_plan[date]):
