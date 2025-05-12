@@ -1,18 +1,4 @@
 {
-  "examPreparationTiming": [
-    "one night before",
-    "2-3 days before",
-    "1 week before",
-    "2+ weeks before"
-  ],
-  "subjectDifficulty": [
-    "calculation-based",
-    "memorization-heavy",
-    "theory-heavy",
-    "programming",
-    "creative",
-    "medical / scientific"
-  ],
   "preferredStudyTimes": [
     "early morning",
     "late morning",
@@ -21,56 +7,16 @@
     "night",
     "late night"
   ],
-  "optimalFocusDuration": [
-    "~30 minutes",
-    "30-45 minutes",
-    "1-2 hours",
-    "over 2 hours"
-  ],
-  "disruptionFactors": [
-    "social media",
-    "fatigue",
-    "environmental noise",
-    "lack of sleep",
-    "poor time management"
-  ],
-  "motivationRecoveryMethod": [
-    "short breaks",
-    "motivational quotes",
-    "peer progress updates",
-    "music & ambient sounds",
-    "task switching"
-  ],
-  "primaryMotivation": [
-    "achieving good grades",
-    "long-term career goals",
-    "impressing parents/teachers",
-    "enjoyment of the subject",
-    "competing with peers"
-  ],
-  "limitedTimeStrategy": [
-    "deep focus on key topics",
-    "skip low-priority content",
-    "use practice tests only",
-    "group study sessions",
-    "summary sheet revision"
-  ],
-  "preferredStudyLocation": [
-    "home",
-    "library",
-    "coffee shop",
-    "quiet room",
-    "outdoor space"
-  ],
+  "preferredSessionDuration": {
+    "min": 30,
+    "max": 90
+  },
   "revisionFrequency": [
-    "single review before exam",
+    "single deep review before exam",
     "2-3 reviews per topic",
-    "daily review sessions",
-    "weekly deep review",
-    "multiple reviews"
+    "daily review sessions"
   ],
-  "studyStyle": [
-    "multiple_passes",
-    "one_pass_deep"
+  "breakDuration": [
+    5, 10, 15, 20, 25, 30
   ]
 }
