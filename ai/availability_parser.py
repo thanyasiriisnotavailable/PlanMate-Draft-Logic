@@ -13,6 +13,7 @@ def generate_slots(availability, preferences):
     break_dur = preferences["breakDuration"]
 
     all_slots = []
+    slot_id = 0
 
     for date, blocks in availability.items():
         for block in blocks:
@@ -34,13 +35,14 @@ def generate_slots(availability, preferences):
                 session_end = current + timedelta(minutes=session_length)
 
                 all_slots.append({
+                    "id": slot_id,
                     "date": date,
                     "start": time_to_str(current),
                     "end": time_to_str(session_end),
                     "duration": session_length
                 })
 
-                # Move current pointer to next slot (after break)
+                slot_id += 1
                 current = session_end + timedelta(minutes=break_dur)
 
     return all_slots
@@ -49,4 +51,4 @@ def generate_slots(availability, preferences):
 if __name__ == "__main__":
     slots = generate_slots(availability, user_preferences)
     for slot in slots:
-        print(f"{slot['date']} | {slot['start']}–{slot['end']} ({slot['duration']} min)")
+        print(f"ID {slot['id']} | {slot['date']} | {slot['start']}–{slot['end']} ({slot['duration']} min)")
